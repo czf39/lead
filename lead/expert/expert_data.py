@@ -69,7 +69,10 @@ class ExpertData(ExpertBase):
         self.perturbation_rotation = 0
 
         # Set up the save path if specified
-        if os.environ.get("SAVE_PATH", None) is not None:
+        if (
+            not self.config_expert.shadow_mode
+            and os.environ.get("SAVE_PATH", None) is not None
+        ):
             self.save_path = (
                 pathlib.Path(os.environ["SAVE_PATH"])
                 / f"{self.town}_Rep{self.rep}_{self.route_index}"
@@ -162,7 +165,7 @@ class ExpertData(ExpertBase):
             self._command_planners_dict[dist] = planner
 
         # Debug camera setup
-        if self.config_expert.save_3rd_person_camera and (
+        if not self.config_expert.shadow_mode and self.config_expert.save_3rd_person_camera and (
             self.config_expert.debug_mode or self.save_path is not None
         ):
             bp_lib = self.carla_world.get_blueprint_library()
@@ -206,7 +209,7 @@ class ExpertData(ExpertBase):
                     )
 
             self._3rd_person_camera.listen(_save_image)
-        if self.config_expert.datagen:
+        if self.config_expert.datagen and not self.config_expert.shadow_mode:
             self.shuffle_weather()
         jpeg_storage_quality_distribution = (
             self.config_expert.weather_jpeg_compression_quality[self.weather_setting]
@@ -1128,7 +1131,7 @@ class ExpertData(ExpertBase):
             writer.write_points(point_record)
 
     @beartype
-    def destroy(self, results: RouteRecord = None) -> None:
+    def destroy(self, results: RouteRecord | None = None) -> None:
         """
         Save the collected data and statistics to files, and clean up the data structures.
         This method should be called at the end of the data collection process.
@@ -1136,6 +1139,9 @@ class ExpertData(ExpertBase):
         Args:
             results: Any additional results to be processed or saved.
         """
+        if self.config_expert.shadow_mode:
+            return
+
         # Clean shutdown of background save thread
         if hasattr(self, "_save_thread") and self._save_thread is not None:
             LOG.info("Shutting down background save thread...")

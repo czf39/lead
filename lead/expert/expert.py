@@ -166,6 +166,75 @@ class Expert(ExpertData):
             LOG.info(f"Step: {self.step}, Time per step: {elapsed_time * 1000:.2f} ms")
         return control
 
+    def run_shadow_step(self, bounding_boxes=None) -> dict:
+        """Run LEAD's privileged policy without sensors, saving or ego control.
+
+        The caller owns the CARLA tick and applies another agent's control.  We
+        only refresh state that can be read from the shared world, execute
+        LEAD's native planning/control computation, and return its evidence.
+        """
+        if not self.config_expert.shadow_mode:
+            raise RuntimeError("run_shadow_step requires shadow_mode=true")
+        if not self.initialized:
+            self._init(None)
+
+        self.step += 1
+        transform = self.ego_vehicle.get_transform()
+        self.transform_queue.append(transform)
+        self.previous_compass = self.compass
+        self.compass = np.deg2rad(transform.rotation.yaw)
+        if self.previous_compass is not None:
+            self.compass = np.unwrap([self.previous_compass, self.compass])[1]
+        self.yaws_queue.append(self.compass)
+        self.speeds_queue.append(self.ego_vehicle.get_velocity().length())
+
+        self.stored_bounding_boxes_of_this_step = list(bounding_boxes or [])
+        self.id2bb_map = {
+            box.get("id"): box
+            for box in self.stored_bounding_boxes_of_this_step
+            if isinstance(box, dict) and box.get("id") is not None
+        }
+        self.id2actor_map = {
+            actor.id: actor
+            for actor in self.carla_world.get_actors()
+            if actor.is_alive and actor.id in self.id2bb_map
+        }
+        if hasattr(self, "stop_sign_criteria"):
+            self.stop_sign_criteria.tick(self.ego_vehicle)
+        self.scenario_sorter.sort_scenarios(self.ego_vehicle.get_location())
+
+        target_speed, control, speed_reduced_by_obj = self._get_control()
+        route_index = int(self.privileged_route_planner.route_index)
+        route_points = self.privileged_route_planner.route_points[
+            route_index : route_index + self.config_expert.num_route_points_saved
+        ]
+        hazard_flags = {
+            "vehicle": bool(self.vehicle_hazard),
+            "walker": bool(self.walker_hazard),
+            "traffic_light": bool(self.traffic_light_hazard),
+            "stop_sign": bool(self.stop_sign_hazard),
+        }
+        return {
+            "target_speed_mps": float(target_speed),
+            "brake_required": bool(control.brake),
+            "hazard_flags": hazard_flags,
+            "hazard_actor_ids": {
+                "vehicle": self.vehicle_affecting_id,
+                "walker": self.walker_affecting_id,
+            },
+            "speed_reduced_by_object": speed_reduced_by_obj,
+            "adjusted_privileged_route": {
+                "route_index": route_index,
+                "points_world": np.asarray(route_points).tolist(),
+            },
+            "proposed_control": {
+                "steer": float(control.steer),
+                "throttle": float(control.throttle),
+                "brake": float(control.brake),
+            },
+            "applied_to_ego": False,
+        }
+
     @beartype
     def perturbate_camera(self) -> None:
         # Update dummy vehicle

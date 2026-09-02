@@ -13,7 +13,7 @@ import numpy.typing as npt
 from agents.navigation.local_planner import RoadOption
 from beartype import beartype
 from leaderboard.autoagents import autonomous_agent, autonomous_agent_local
-from privileged_route_planner import PrivilegedRoutePlanner
+from lead.expert.privileged_route_planner import PrivilegedRoutePlanner
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 
 import lead.common.common_utils as common_utils
@@ -109,13 +109,16 @@ class ExpertBase(BaseAgent, autonomous_agent_local.AutonomousAgent):
                 )
                 self.list_traffic_lights.append((actor, center, waypoints))
 
-        # Remove bugged 2-wheelers
-        # https://github.com/carla-simulator/carla/issues/3670
-        for actor in all_actors:
-            if "vehicle" in actor.type_id:
-                extent = actor.bounding_box.extent
-                if extent.x < 0.001 or extent.y < 0.001 or extent.z < 0.001:
-                    actor.destroy()
+        # A shadow expert observes the same world as the evaluated agent and is
+        # never allowed to mutate it, even for LEAD's normal simulator cleanup.
+        if not self.config_expert.shadow_mode:
+            # Remove bugged 2-wheelers
+            # https://github.com/carla-simulator/carla/issues/3670
+            for actor in all_actors:
+                if "vehicle" in actor.type_id:
+                    extent = actor.bounding_box.extent
+                    if extent.x < 0.001 or extent.y < 0.001 or extent.z < 0.001:
+                        actor.destroy()
 
     @step_cached_property
     def actors(self) -> carla.ActorList:

@@ -29,6 +29,11 @@ class ExpertConfig(BaseConfig):
         )
 
     @overridable_property
+    def shadow_mode(self):
+        """Run the expert as a read-only oracle beside another driving agent."""
+        return False
+
+    @overridable_property
     def target_dataset(self):
         """Set this to the target dataset for data collection. Will affect sensor setup."""
         return TargetDataset.CARLA_LEADERBOARD2_3CAMERAS
@@ -200,7 +205,7 @@ class ExpertConfig(BaseConfig):
             return True
         return True
 
-    @property
+    @overridable_property
     def datagen(self):
         """If true enable data generation mode."""
         if not self.debug_mode:

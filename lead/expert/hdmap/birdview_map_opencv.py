@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 import psutil
 from tqdm import tqdm
-from traffic_light import TrafficLightHandler
+from lead.expert.hdmap.traffic_light import TrafficLightHandler
 
 COLOR_WHITE = (255, 255, 255)
 
